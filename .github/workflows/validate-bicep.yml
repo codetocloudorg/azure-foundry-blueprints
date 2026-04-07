@@ -1,0 +1,58 @@
+name: Validate Bicep
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bicep/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bicep/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Bicep Build & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Bicep CLI
+        run: az bicep install && az bicep version
+
+      - name: Build bicep/dev/main.bicep
+        if: hashFiles('bicep/dev/main.bicep') != ''
+        run: az bicep build --file bicep/dev/main.bicep
+
+      - name: Build all Bicep files
+        run: |
+          EXIT_CODE=0
+          while IFS= read -r file; do
+            echo "Building ${file}..."
+            if ! az bicep build --file "${file}" --stdout > /dev/null; then
+              echo "::error file=${file}::Bicep build failed for ${file}"
+              EXIT_CODE=1
+            fi
+          done < <(find bicep/ -type f -name '*.bicep')
+          exit "${EXIT_CODE}"
+
+      - name: Lint all Bicep files
+        run: |
+          if az bicep lint --help &>/dev/null; then
+            EXIT_CODE=0
+            while IFS= read -r file; do
+              echo "Linting ${file}..."
+              if ! az bicep lint --file "${file}"; then
+                echo "::error file=${file}::Bicep lint failed for ${file}"
+                EXIT_CODE=1
+              fi
+            done < <(find bicep/ -type f -name '*.bicep')
+            exit "${EXIT_CODE}"
+          else
+            echo "::notice::'az bicep lint' not available — skipping"
+          fi

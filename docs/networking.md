@@ -111,9 +111,14 @@ All PaaS services are accessed through private endpoints. A private endpoint cre
 
 | Resource | Subresource | Private DNS Zone |
 |----------|------------|-----------------|
+| AI Foundry Hub (ML workspace) | `amlworkspace` | `privatelink.api.azureml.ms` |
+| AI Foundry Compute / Notebooks | `amlworkspace` | `privatelink.notebooks.azure.net` |
+| Cognitive Services | `account` | `privatelink.cognitiveservices.azure.com` |
+| Azure OpenAI | `account` | `privatelink.openai.azure.com` |
+| Azure AI Services | `account` | `privatelink.aiservices.azure.com` |
 | Key Vault | `vault` | `privatelink.vaultcore.azure.net` |
-| Storage Account | `blob` | `privatelink.blob.core.windows.net` |
-| AI Foundry (Cognitive Services) | `account` | `privatelink.cognitiveservices.azure.com` |
+| Storage Account (blob) | `blob` | `privatelink.blob.core.windows.net` |
+| Storage Account (file) | `file` | `privatelink.file.core.windows.net` |
 | Log Analytics | `query` | `privatelink.ods.opinsights.azure.com` |
 | Application Insights | `query` | `privatelink.monitor.azure.com` |
 | Azure Monitor | `agent` | `privatelink.agentsvc.azure-automation.net` |
@@ -136,13 +141,20 @@ Private DNS zones enable FQDN resolution to private IP addresses within the VNet
 
 | DNS Zone | Service | Example FQDN |
 |----------|---------|---------------|
-| `privatelink.cognitiveservices.azure.com` | AI Services / Foundry | `myservice.cognitiveservices.azure.com` |
+| `privatelink.api.azureml.ms` | AI Foundry Hub (ML workspace) | `myhub.api.azureml.ms` |
+| `privatelink.notebooks.azure.net` | AI Foundry compute & notebooks | `myhub.notebooks.azure.net` |
+| `privatelink.cognitiveservices.azure.com` | Cognitive Services | `myservice.cognitiveservices.azure.com` |
+| `privatelink.openai.azure.com` | Azure OpenAI | `myopenai.openai.azure.com` |
+| `privatelink.aiservices.azure.com` | Azure AI Services | `myaiservice.aiservices.azure.com` |
 | `privatelink.vaultcore.azure.net` | Key Vault | `myvault.vault.azure.net` |
 | `privatelink.blob.core.windows.net` | Blob Storage | `mystorage.blob.core.windows.net` |
+| `privatelink.file.core.windows.net` | File Storage (Foundry workspace files) | `mystorage.file.core.windows.net` |
 | `privatelink.monitor.azure.com` | Azure Monitor | `monitor.monitor.azure.com` |
 | `privatelink.ods.opinsights.azure.com` | Log Analytics (data) | `workspace.ods.opinsights.azure.com` |
 | `privatelink.oms.opinsights.azure.com` | Log Analytics (management) | `workspace.oms.opinsights.azure.com` |
 | `privatelink.agentsvc.azure-automation.net` | Azure Automation Agent | `agent.agentsvc.azure-automation.net` |
+
+> **Note:** Azure AI Foundry requires multiple Private DNS zones for full private networking support. At minimum, you need `privatelink.api.azureml.ms` (workspace API), `privatelink.notebooks.azure.net` (compute and notebooks), `privatelink.cognitiveservices.azure.com` (Cognitive Services), `privatelink.openai.azure.com` (OpenAI model endpoints), and `privatelink.aiservices.azure.com` (AI Services). Missing any of these zones will cause DNS resolution failures for specific Foundry features when public network access is disabled.
 
 ### DNS Resolution Flow
 
