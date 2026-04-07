@@ -5,15 +5,15 @@ using './main.bicep'
 // ---------------------
 // Deploy with:
 //   az deployment sub create \
-//     --location eastus2 \
+//     --location westus2 \
 //     --template-file ./main.bicep \
 //     --parameters ./main.bicepparam
 
-param location = 'eastus2'
+param location = 'westus2'
 param environment = 'dev'
 param workloadName = 'foundry'
+param instance = '002'
 
 // Override defaults if needed:
-// param instance = '001'
 // param owner = 'platform-team'
 // param costCenter = 'cc-12345'

@@ -5,6 +5,10 @@
 [![Azure](https://img.shields.io/badge/Azure-AI%20Services-0078D4?logo=microsoftazure)](https://azure.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://connect.codetocloud.io)
+[![Podcast](https://img.shields.io/badge/Podcast-Code%20To%20Cloud-1DB954?logo=spotify&logoColor=white)](https://connect.codetocloud.io)
+[![YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white)](https://connect.codetocloud.io)
+
 > **⚠️ Disclaimer:** This code is provided as-is, with no warranties or guarantees of any kind. Use at your own risk. Always test thoroughly in non-production environments before deploying to production.
 
 Enterprise-ready Microsoft Foundry deployment blueprints using **Bicep** and **Terraform**, aligned with modern Microsoft cloud architecture standards and [Azure AI Landing Zone](https://aka.ms/ailz) best practices.
