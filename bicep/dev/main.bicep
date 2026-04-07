@@ -327,20 +327,22 @@ module privateDns '../modules/private-dns/main.bicep' = [
 // ============================
 // 7. AI Foundry — Hub + Project
 // ============================
+// Uses the new Cognitive Services-based architecture with allowProjectManagement.
+// No longer requires Key Vault, Storage, or App Insights linked resources.
 
 module foundry '../modules/foundry/main.bicep' = {
   name: 'foundryDeploy'
   scope: rg
   params: {
-    hubName: hubName
+    foundryName: hubName
     projectName: projName
+    projectDescription: 'Development project for ${workloadName}'
     location: location
-    skuName: 'Basic'
-    keyVaultId: keyVault.outputs.id
-    storageAccountId: storageAccount.outputs.id
-    applicationInsightsId: appInsights.outputs.id
-    identityId: managedIdentity.outputs.id
+    skuName: 'S0'
+    customSubdomainName: 'foundry-${workloadName}-${environment}-${regionShort}-${instance}'
+    identityIds: [managedIdentity.outputs.id]
     publicNetworkAccess: 'Disabled'
+    disableLocalAuth: false
     tags: commonTags
   }
 }
@@ -417,19 +419,18 @@ module peStorageFile '../modules/private-endpoint/main.bicep' = {
 // control-plane, notebook compute, and backing AI services each resolve
 // through different FQDNs. Registering all five zones ensures every
 // request path stays on the private network.
+// NOTE: Uses 'account' groupId for Cognitive Services (not 'amlworkspace').
 
-module peFoundryHub '../modules/private-endpoint/main.bicep' = {
-  name: 'peFoundryHubDeploy'
+module peFoundry '../modules/private-endpoint/main.bicep' = {
+  name: 'peFoundryDeploy'
   scope: rg
   params: {
-    name: 'pep-aihub-${nameSuffix}'
+    name: 'pep-foundry-${nameSuffix}'
     location: location
     subnetId: vnet.outputs.subnetIds['snet-pe']
-    privateLinkServiceId: foundry.outputs.hubId
-    groupIds: ['amlworkspace']
+    privateLinkServiceId: foundry.outputs.id
+    groupIds: ['account']
     privateDnsZoneIds: [
-      privateDns[0].outputs.id // privatelink.api.azureml.ms          — workspace API
-      privateDns[1].outputs.id // privatelink.notebooks.azure.net      — compute/notebooks
       privateDns[2].outputs.id // privatelink.cognitiveservices.azure.com — Cognitive Services
       privateDns[3].outputs.id // privatelink.openai.azure.com         — Azure OpenAI
       privateDns[4].outputs.id // privatelink.aiservices.azure.com     — AI Services
@@ -451,11 +452,14 @@ output vnetId string = vnet.outputs.id
 @description('The Key Vault URI for secret access.')
 output keyVaultUri string = keyVault.outputs.vaultUri
 
-@description('The resource ID of the AI Foundry hub.')
-output aiHubId string = foundry.outputs.hubId
+@description('The resource ID of the Microsoft Foundry resource.')
+output foundryId string = foundry.outputs.id
 
-@description('The resource ID of the AI Foundry project.')
-output aiProjectId string = foundry.outputs.projectId
+@description('The endpoint URL of the Microsoft Foundry resource.')
+output foundryEndpoint string = foundry.outputs.endpoint
+
+@description('The resource ID of the Foundry project.')
+output foundryProjectId string = foundry.outputs.projectId
 
 @description('The Log Analytics workspace customer ID.')
 output logAnalyticsWorkspaceId string = logAnalytics.outputs.workspaceId

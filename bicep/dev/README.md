@@ -1,6 +1,37 @@
 # Bicep Dev Spoke Deployment
 
-Deploys a complete Azure AI Foundry dev spoke environment including networking, observability, identity, security, and AI Foundry resources.
+> **⚠️ Disclaimer:** This code is provided as-is, with no warranties or guarantees. Use at your own risk.
+
+## 🚀 Deploys the New Foundry Experience
+
+This deployment creates the **NEW Microsoft Foundry portal experience** — not the classic Azure AI Studio hub-based model.
+
+- **Foundry Account**: `Microsoft.CognitiveServices/accounts` with `allowProjectManagement: true`
+- **Foundry Project**: `Microsoft.CognitiveServices/accounts/projects` (new project type)
+
+This enables the modern Foundry portal for building agents, running evaluations, and deploying AI applications.
+
+```mermaid
+flowchart LR
+    subgraph old["Classic"]
+        hub["ML Workspace\nHub"]
+        proj_old["ML Workspace\nProject"]
+        hub --> proj_old
+    end
+    
+    subgraph new["This Deployment"]
+        foundry["Cognitive Services\nAIServices"]
+        proj_new["Foundry Project"]
+        foundry --> proj_new
+    end
+    
+    style new fill:#d4edda,stroke:#28a745,color:#000
+    style old fill:#f8d7da,stroke:#dc3545,color:#000
+    style foundry fill:#0078d4,color:#000
+    style proj_new fill:#50e6ff,color:#000
+    style hub fill:#ffcccc,color:#000
+    style proj_old fill:#ffcccc,color:#000
+```
 
 ## Architecture
 
@@ -14,14 +45,38 @@ This deployment creates:
 | Log Analytics | `log-foundry-dev-eus2-001` | Centralized logging |
 | Application Insights | `appi-foundry-dev-eus2-001` | Telemetry and APM |
 | Managed Identity | `id-foundry-dev-eus2-001` | Workload identity (no secrets) |
-| Storage Account | `stfoundrydeveus2001` | AI Foundry data store |
+| Storage Account | `stfoundrydeveus2001` | Data store |
 | Key Vault | `kv-foundry-dev-eus2-001` | Secret management (RBAC, purge-protected) |
 | Private DNS Zones | `privatelink.*` | FQDN resolution for private endpoints |
-| AI Foundry Hub | `aihub-foundry-dev-eus2-001` | AI workspace hub |
-| AI Foundry Project | `aiproj-foundry-dev-eus2-001` | AI workspace project |
-| Private Endpoints | `pep-{service}-foundry-dev-eus2-001` | Key Vault + AI Foundry Hub |
+| Microsoft Foundry | `aihub-foundry-dev-eus2-001` | AI Services account with `allowProjectManagement: true` |
+| Foundry Project | `aiproj-foundry-dev-eus2-001` | Team/workload isolation boundary |
+| Private Endpoints | `pep-{service}-foundry-dev-eus2-001` | Key Vault, Storage, Foundry |
 
 ### Subnet Layout
+
+```mermaid
+flowchart TB
+    subgraph vnet["Virtual Network: 10.100.0.0/16"]
+        subgraph snet1["snet-default"]
+            w1["General Workloads"]
+        end
+        subgraph snet2["snet-pe"]
+            pe1["PE: Key Vault"]
+            pe2["PE: Storage Blob"]
+            pe3["PE: Storage File"]
+            pe4["PE: Foundry"]
+        end
+        subgraph snet3["snet-ai"]
+            w2["AI Compute"]
+        end
+        subgraph snet4["snet-management"]
+            w3["Bastion / Mgmt"]
+        end
+    end
+    
+    style vnet fill:#fff3cd,stroke:#ffc107,color:#000
+    style snet2 fill:#d4edda,stroke:#28a745,color:#000
+```
 
 | Subnet | CIDR | Purpose |
 |--------|------|---------|
