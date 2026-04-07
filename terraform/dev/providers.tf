@@ -20,14 +20,22 @@ terraform {
   }
 
   # ---------------------------------------------------------
-  # Remote Backend (uncomment for shared / CI-CD workflows)
+  # Remote Backend — Azure Storage
   # ---------------------------------------------------------
-  # backend "azurerm" {
-  #   resource_group_name  = "rg-terraform-state"
-  #   storage_account_name = "stterraformstate"
-  #   container_name       = "tfstate"
-  #   key                  = "foundry-dev.tfstate"
-  # }
+  # For local development: terraform init -backend=false
+  # For CI/CD or shared state: terraform init -backend-config=backend.hcl
+  #
+  # The backend block must be empty or have only static values.
+  # Dynamic values are passed via -backend-config or env vars.
+  # ---------------------------------------------------------
+  backend "azurerm" {
+    # Values provided via backend.hcl or CLI:
+    #   resource_group_name  = "rg-terraform-state"
+    #   storage_account_name = "stfoundrystate001"
+    #   container_name       = "tfstate"
+    #   key                  = "foundry-dev.tfstate"
+    #   use_azuread_auth     = true
+  }
 }
 
 provider "azurerm" {

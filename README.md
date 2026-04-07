@@ -5,6 +5,9 @@
 [![Azure](https://img.shields.io/badge/Azure-AI%20Services-0078D4?logo=microsoftazure)](https://azure.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+[![Terraform CI](https://github.com/codetocloudorg/azure-foundry-blueprints/actions/workflows/validate-terraform.yml/badge.svg)](https://github.com/codetocloudorg/azure-foundry-blueprints/actions/workflows/validate-terraform.yml)
+[![Bicep CI](https://github.com/codetocloudorg/azure-foundry-blueprints/actions/workflows/validate-bicep.yml/badge.svg)](https://github.com/codetocloudorg/azure-foundry-blueprints/actions/workflows/validate-bicep.yml)
+
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://connect.codetocloud.io)
 [![Podcast](https://img.shields.io/badge/Podcast-Code%20To%20Cloud-1DB954?logo=spotify&logoColor=white)](https://connect.codetocloud.io)
 [![YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white)](https://connect.codetocloud.io)

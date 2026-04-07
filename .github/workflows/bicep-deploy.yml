@@ -1,0 +1,229 @@
+# =============================================================================
+# Bicep CI/CD Pipeline
+# =============================================================================
+# Triggers on push to main (deploy) or PR (what-if only).
+# Uses Azure subscription-scoped deployment.
+# Requires GitHub Environment secrets for Azure authentication.
+#
+# Required Secrets (in GitHub Environment "dev"):
+#   AZURE_CLIENT_ID       - Service Principal Client ID
+#   AZURE_SUBSCRIPTION_ID - Target Azure Subscription
+#   AZURE_TENANT_ID       - Azure AD Tenant ID
+#
+# For OIDC (recommended): Configure federated credentials on the SP
+# For client secret: Add AZURE_CLIENT_SECRET secret
+# =============================================================================
+
+name: Bicep Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bicep/**"
+      - ".github/workflows/bicep-deploy.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bicep/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      action:
+        description: "Action to perform"
+        required: true
+        default: "what-if"
+        type: choice
+        options:
+          - what-if
+          - deploy
+      location:
+        description: "Azure region"
+        required: true
+        default: "westus2"
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write # Required for OIDC auth
+
+env:
+  BICEP_DIR: "bicep/dev"
+  LOCATION: "westus2"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Validate & Lint
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bicep CLI
+        run: az bicep install && az bicep version
+
+      - name: Build Bicep
+        run: az bicep build --file ${{ env.BICEP_DIR }}/main.bicep
+
+      - name: Lint Bicep (if available)
+        run: |
+          if az bicep lint --help &>/dev/null; then
+            az bicep lint --file ${{ env.BICEP_DIR }}/main.bicep
+          else
+            echo "::notice::Bicep lint not available, skipping"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # What-If (Preview changes)
+  # ---------------------------------------------------------------------------
+  what-if:
+    name: What-If
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: dev
+    outputs:
+      changes: ${{ steps.whatif.outputs.changes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: What-If Preview
+        id: whatif
+        run: |
+          echo "## What-If Results" >> $GITHUB_STEP_SUMMARY
+          
+          RESULT=$(az deployment sub what-if \
+            --location ${{ env.LOCATION }} \
+            --template-file ${{ env.BICEP_DIR }}/main.bicep \
+            --parameters ${{ env.BICEP_DIR }}/main.bicepparam \
+            --name "whatif-${{ github.run_id }}" \
+            --no-pretty-print 2>&1) || true
+          
+          echo "$RESULT"
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$RESULT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          
+          # Check if there are actual changes
+          if echo "$RESULT" | grep -q "NoChange"; then
+            echo "changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment PR with What-If
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const result = execSync(`az deployment sub what-if \
+              --location ${{ env.LOCATION }} \
+              --template-file ${{ env.BICEP_DIR }}/main.bicep \
+              --parameters ${{ env.BICEP_DIR }}/main.bicepparam \
+              --name "whatif-pr-${{ github.event.pull_request.number }}" \
+              --no-pretty-print 2>&1 || true`).toString();
+            
+            const truncated = result.length > 60000 ? result.substring(0, 60000) + '\n\n... (truncated)' : result;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Bicep What-If Preview 📋\n\n<details>\n<summary>Show Changes</summary>\n\n\`\`\`\n${truncated}\n\`\`\`\n\n</details>`
+            });
+
+  # ---------------------------------------------------------------------------
+  # Deploy (only on push to main or manual trigger)
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: what-if
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep
+        run: |
+          DEPLOYMENT_NAME="bicep-foundry-$(date +%Y%m%d%H%M%S)"
+          
+          az deployment sub create \
+            --location ${{ github.event.inputs.location || env.LOCATION }} \
+            --template-file ${{ env.BICEP_DIR }}/main.bicep \
+            --parameters ${{ env.BICEP_DIR }}/main.bicepparam \
+            --name "$DEPLOYMENT_NAME"
+          
+          echo "## Deployment Successful ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Name:** $DEPLOYMENT_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "- **Location:** ${{ github.event.inputs.location || env.LOCATION }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Output Resource Group
+        run: |
+          # Extract the resource group name from deployment outputs
+          RG_NAME=$(az deployment sub show \
+            --name "$(az deployment sub list --query "[0].name" -o tsv)" \
+            --query "properties.outputs.resourceGroupName.value" -o tsv 2>/dev/null || echo "See deployment")
+          
+          echo "- **Resource Group:** $RG_NAME" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Cleanup (manual trigger only)
+  # ---------------------------------------------------------------------------
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'cleanup'
+    environment: dev
+
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Delete Resource Group
+        run: |
+          # Construct RG name based on naming convention
+          RG_NAME="rg-foundry-${{ github.event.inputs.environment }}-wus2-002"
+          
+          echo "Deleting resource group: $RG_NAME"
+          az group delete --name "$RG_NAME" --yes --no-wait
+          
+          echo "## Cleanup Initiated 🗑️" >> $GITHUB_STEP_SUMMARY
+          echo "Resource group **$RG_NAME** deletion initiated (async)" >> $GITHUB_STEP_SUMMARY
