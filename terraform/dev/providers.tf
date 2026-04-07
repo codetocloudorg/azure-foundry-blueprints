@@ -1,9 +1,9 @@
 # --------------------------------------------------------------------------
 # Provider Configuration
 # --------------------------------------------------------------------------
-# Configures the AzureRM provider for the dev spoke deployment.
-# The backend block is commented out for local development — uncomment and
-# configure when using remote state with Azure Storage.
+# Configures the AzureRM and AzAPI providers for the dev spoke deployment.
+# AzAPI is required for the new Microsoft Foundry experience which uses
+# properties not yet exposed in AzureRM (e.g., allowProjectManagement).
 
 terraform {
   required_version = ">= 1.5"
@@ -12,6 +12,10 @@ terraform {
     azurerm = {
       source  = "hashicorp/azurerm"
       version = ">= 4.0"
+    }
+    azapi = {
+      source  = "Azure/azapi"
+      version = ">= 2.0"
     }
   }
 
@@ -28,4 +32,11 @@ terraform {
 
 provider "azurerm" {
   features {}
+
+  # Use Azure AD for storage data plane operations (required when key-based auth is disabled)
+  storage_use_azuread = true
+}
+
+provider "azapi" {
+  # Uses same auth as azurerm by default
 }

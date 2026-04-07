@@ -92,21 +92,50 @@ output "storage_account_name" {
   value       = azurerm_storage_account.this.name
 }
 
-# ---- AI Foundry ----
+# ---- Microsoft Foundry ----
 
-output "foundry_hub_id" {
-  description = "Resource ID of the AI Foundry hub."
-  value       = module.foundry.hub_id
+output "foundry_id" {
+  description = "Resource ID of the Microsoft Foundry resource."
+  value       = module.foundry.id
+}
+
+output "foundry_endpoint" {
+  description = "Endpoint URL of the Microsoft Foundry resource."
+  value       = module.foundry.endpoint
 }
 
 output "foundry_project_id" {
-  description = "Resource ID of the AI Foundry project."
+  description = "Resource ID of the Foundry project."
   value       = module.foundry.project_id
 }
 
-output "foundry_hub_endpoint" {
-  description = "Discovery URL (endpoint) for the AI Foundry hub."
-  value       = module.foundry.hub_endpoint
+# ---- Agent Standard Resources ----
+
+output "cosmosdb_endpoint" {
+  description = "Cosmos DB endpoint for agent state storage."
+  value       = azurerm_cosmosdb_account.this.endpoint
+}
+
+output "cosmosdb_id" {
+  description = "Resource ID of the Cosmos DB account."
+  value       = azurerm_cosmosdb_account.this.id
+}
+
+output "search_endpoint" {
+  description = "AI Search endpoint for vector retrieval."
+  value       = "https://${azurerm_search_service.this.name}.search.windows.net"
+}
+
+output "search_id" {
+  description = "Resource ID of the AI Search service."
+  value       = azurerm_search_service.this.id
+}
+
+# ---- Internet Egress ----
+
+output "nat_gateway_public_ip" {
+  description = "Public IP address for outbound internet traffic."
+  value       = azurerm_public_ip.nat.ip_address
 }
 
 # ---- Private Endpoints ----

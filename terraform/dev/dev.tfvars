@@ -3,7 +3,7 @@
 # --------------------------------------------------------------------------
 # Usage: terraform plan -var-file="dev.tfvars"
 
-location      = "eastus2"
+location      = "westus2"
 environment   = "dev"
 workload_name = "foundry"
 instance      = "001"

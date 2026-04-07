@@ -1,15 +1,22 @@
 # --------------------
-# Input Variables
+# Input Variables — Microsoft Foundry (New Architecture)
 # --------------------
 
-variable "hub_name" {
-  description = "The name of the Azure AI Foundry hub."
+variable "foundry_name" {
+  description = "The name of the Microsoft Foundry resource (AI Services account)."
   type        = string
 }
 
 variable "project_name" {
-  description = "The name of the Azure AI Foundry project (child of the hub)."
+  description = "The name of the Foundry project. Set to null to skip project creation."
   type        = string
+  default     = null
+}
+
+variable "project_description" {
+  description = "Description for the Foundry project."
+  type        = string
+  default     = "Development project"
 }
 
 variable "resource_group_name" {
@@ -18,28 +25,25 @@ variable "resource_group_name" {
 }
 
 variable "location" {
-  description = "The Azure region where the Foundry hub and project will be created."
+  description = "The Azure region where the Foundry resource will be created."
   type        = string
 }
 
-variable "key_vault_id" {
-  description = "The resource ID of the Key Vault associated with the hub."
+variable "sku_name" {
+  description = "The SKU for the AI Services account (e.g., S0, S1)."
   type        = string
+  default     = "S0"
 }
 
-variable "storage_account_id" {
-  description = "The resource ID of the Storage Account associated with the hub."
-  type        = string
-}
-
-variable "application_insights_id" {
-  description = "The resource ID of the Application Insights instance associated with the hub."
+variable "custom_subdomain_name" {
+  description = "Custom subdomain name for the Foundry endpoint. Must be globally unique."
   type        = string
 }
 
 variable "identity_ids" {
-  description = "A list of user-assigned managed identity IDs to attach to the hub and project."
+  description = "A list of user-assigned managed identity IDs to attach to the Foundry resource."
   type        = list(string)
+  default     = null
 }
 
 variable "public_network_access" {
@@ -51,6 +55,12 @@ variable "public_network_access" {
     condition     = contains(["Enabled", "Disabled"], var.public_network_access)
     error_message = "public_network_access must be either 'Enabled' or 'Disabled'."
   }
+}
+
+variable "disable_local_auth" {
+  description = "Disable API key authentication (use managed identity only)."
+  type        = bool
+  default     = false
 }
 
 variable "tags" {

@@ -1,47 +1,87 @@
-# Azure AI Foundry Module
-# -----------------------
-# Creates an Azure AI Foundry hub and project using the modern
-# azurerm_ai_foundry and azurerm_ai_foundry_project resources.
+# Microsoft Foundry Module (New Architecture)
+# --------------------------------------------
+# Creates a Microsoft Foundry resource using the NEW architecture based on
+# Microsoft.CognitiveServices/account with kind "AIServices".
 #
-# The hub is the top-level workspace that holds shared configuration
-# (Key Vault, Storage, App Insights, networking). Projects are
-# child workspaces scoped to a specific team or use case.
+# IMPORTANT: Uses AzAPI provider to set `allowProjectManagement = true`
+# which enables the NEW Foundry portal experience (not classic).
 #
-# NOTE: azurerm_ai_foundry and azurerm_ai_foundry_project are the
-# preferred resources (available in azurerm >= 4.x). If your provider
-# version does not support them, you would fall back to
-# azurerm_cognitive_account with kind = "AIServices", but that approach
-# does not support hub/project semantics natively.
+# Reference: https://learn.microsoft.com/en-us/azure/foundry/how-to/create-resource-terraform
 
-resource "azurerm_ai_foundry" "this" {
-  name                = var.hub_name
-  resource_group_name = var.resource_group_name
-  location            = var.location
-  tags                = var.tags
-
-  # Public network access is a string: "Enabled" or "Disabled".
-  # Disabled by default — access through private endpoints only.
-  public_network_access = var.public_network_access
-
-  # Core dependencies — the hub manages these shared resources for all projects.
-  key_vault_id            = var.key_vault_id
-  storage_account_id      = var.storage_account_id
-  application_insights_id = var.application_insights_id
-
-  identity {
-    type         = "UserAssigned"
-    identity_ids = var.identity_ids
+terraform {
+  required_providers {
+    azapi = {
+      source  = "Azure/azapi"
+      version = ">= 2.0"
+    }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = ">= 4.0"
+    }
   }
 }
 
-resource "azurerm_ai_foundry_project" "this" {
-  name               = var.project_name
-  ai_services_hub_id = azurerm_ai_foundry.this.id
-  location           = var.location
-  tags               = var.tags
+resource "azapi_resource" "foundry" {
+  type                      = "Microsoft.CognitiveServices/accounts@2025-06-01"
+  name                      = var.foundry_name
+  parent_id                 = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"
+  location                  = var.location
+  schema_validation_enabled = false
 
-  identity {
-    type         = "UserAssigned"
-    identity_ids = var.identity_ids
+  body = {
+    kind = "AIServices"
+    sku = {
+      name = var.sku_name
+    }
+
+    identity = {
+      type                   = var.identity_ids != null && length(var.identity_ids) > 0 ? "SystemAssigned, UserAssigned" : "SystemAssigned"
+      userAssignedIdentities = var.identity_ids != null && length(var.identity_ids) > 0 ? { for id in var.identity_ids : id => {} } : null
+    }
+
+    properties = {
+      # Enable the NEW Foundry portal experience (not classic hub-based)
+      allowProjectManagement = true
+
+      # Custom subdomain for DNS names created for this Foundry resource
+      customSubDomainName = var.custom_subdomain_name
+
+      # Network isolation — disabled for enterprise deployments
+      publicNetworkAccess = var.public_network_access
+
+      # Disable local auth if using managed identity only
+      disableLocalAuth = var.disable_local_auth
+    }
   }
+
+  tags = var.tags
+}
+
+# Data source to get current subscription ID
+data "azurerm_client_config" "current" {}
+
+# Foundry Project — development boundary inside the Foundry resource
+# Projects provide isolation for teams to build agents, evaluations, and AI apps.
+resource "azapi_resource" "project" {
+  count                     = var.project_name != null ? 1 : 0
+  type                      = "Microsoft.CognitiveServices/accounts/projects@2025-06-01"
+  name                      = var.project_name
+  parent_id                 = azapi_resource.foundry.id
+  location                  = var.location
+  schema_validation_enabled = false
+
+  body = {
+    sku = {
+      name = var.sku_name
+    }
+    identity = {
+      type = "SystemAssigned"
+    }
+    properties = {
+      displayName = var.project_name
+      description = var.project_description
+    }
+  }
+
+  tags = var.tags
 }

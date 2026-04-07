@@ -60,6 +60,7 @@ locals {
   }
 
   # Subnet definitions following /shared/network-design/README.md.
+  # Aligned with Azure AI Landing Zones subnet strategy.
   subnets = [
     {
       name                              = "snet-default"
@@ -86,24 +87,24 @@ locals {
   # Private DNS zones required by the spoke — one per Azure service type
   # that needs private-link resolution.
   #
-  # Azure AI Foundry best practices require zones for:
-  #  - ML workspace API & notebook compute (azureml, notebooks)
-  #  - AI model inference: Cognitive Services, OpenAI, AI Services
+  # Microsoft Foundry (new architecture) requires zones for:
+  #  - Cognitive Services, OpenAI, AI Services (unified endpoint)
   #  - Supporting services: Key Vault, Storage (blob + file), Monitor/Log Analytics
-  # See: https://learn.microsoft.com/azure/ai-studio/how-to/configure-private-link
+  #  - Agent standard resources: Cosmos DB, AI Search (D-R1 best practice)
+  # See: https://learn.microsoft.com/azure/foundry/how-to/configure-private-link
   private_dns_zones = {
-    azureml    = "privatelink.api.azureml.ms"                # Foundry Hub ML workspace API
-    notebooks  = "privatelink.notebooks.azure.net"           # Compute instances / notebooks
     cognitive  = "privatelink.cognitiveservices.azure.com"   # Cognitive Services
     openai     = "privatelink.openai.azure.com"              # Azure OpenAI
     aiservices = "privatelink.aiservices.azure.com"          # AI Services (unified endpoint)
     vault      = "privatelink.vaultcore.azure.net"           # Key Vault
     blob       = "privatelink.blob.core.windows.net"         # Blob Storage
-    file       = "privatelink.file.core.windows.net"         # File Storage (Foundry file shares)
+    file       = "privatelink.file.core.windows.net"         # File Storage
     monitor    = "privatelink.monitor.azure.com"             # Azure Monitor
     ods        = "privatelink.ods.opinsights.azure.com"      # Log Analytics data ingest
     oms        = "privatelink.oms.opinsights.azure.com"      # Log Analytics OMS
     automation = "privatelink.agentsvc.azure-automation.net" # Automation agent service
+    cosmosdb   = "privatelink.documents.azure.com"           # Cosmos DB (Agent state)
+    search     = "privatelink.search.windows.net"            # AI Search (Vector retrieval)
   }
 }
 
@@ -135,6 +136,54 @@ module "vnet" {
   address_space       = var.address_space
   subnets             = local.subnets
   tags                = local.common_tags
+}
+
+# ==========================================================================
+# 2a. NAT Gateway — Internet Egress Path
+# ==========================================================================
+# Provides outbound internet connectivity for resources in the spoke VNet.
+# Without this (or a hub firewall), private resources cannot reach the internet
+# for package downloads, API calls to external services, etc.
+# Associated with snet-ai where workloads run.
+
+resource "azurerm_public_ip" "nat" {
+  name                = "pip-nat-${local.name_prefix}"
+  resource_group_name = module.resource_group.name
+  location            = module.resource_group.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  zones               = ["1", "2", "3"]
+  tags                = local.common_tags
+}
+
+resource "azurerm_nat_gateway" "this" {
+  name                    = "nat-${local.name_prefix}"
+  resource_group_name     = module.resource_group.name
+  location                = module.resource_group.location
+  sku_name                = "Standard"
+  idle_timeout_in_minutes = 10
+  zones                   = ["1"]
+  tags                    = local.common_tags
+}
+
+resource "azurerm_nat_gateway_public_ip_association" "this" {
+  nat_gateway_id       = azurerm_nat_gateway.this.id
+  public_ip_address_id = azurerm_public_ip.nat.id
+}
+
+resource "azurerm_subnet_nat_gateway_association" "ai" {
+  subnet_id      = module.vnet.subnet_ids["snet-ai"]
+  nat_gateway_id = azurerm_nat_gateway.this.id
+}
+
+resource "azurerm_subnet_nat_gateway_association" "default" {
+  subnet_id      = module.vnet.subnet_ids["snet-default"]
+  nat_gateway_id = azurerm_nat_gateway.this.id
+}
+
+resource "azurerm_subnet_nat_gateway_association" "management" {
+  subnet_id      = module.vnet.subnet_ids["snet-management"]
+  nat_gateway_id = azurerm_nat_gateway.this.id
 }
 
 # ==========================================================================
@@ -238,10 +287,170 @@ resource "azurerm_storage_account" "this" {
   account_replication_type = "LRS"
 
   # Security defaults — private networking enforced.
-  public_network_access_enabled = false
-  min_tls_version               = "TLS1_2"
+  public_network_access_enabled   = false
+  min_tls_version                 = "TLS1_2"
+  shared_access_key_enabled       = false  # Azure AD auth only (policy requirement)
+  default_to_oauth_authentication = true
 
   tags = local.common_tags
+}
+
+# ==========================================================================
+# 8a. RBAC Role Assignments for Managed Identity
+# ==========================================================================
+# AI Foundry requires the managed identity to have data plane access to
+# storage (blob + file) and secrets access to Key Vault. These must be
+# granted BEFORE the Foundry Hub is created.
+
+resource "azurerm_role_assignment" "identity_storage_blob" {
+  scope                = azurerm_storage_account.this.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = module.managed_identity.principal_id
+}
+
+resource "azurerm_role_assignment" "identity_storage_file" {
+  scope                = azurerm_storage_account.this.id
+  role_definition_name = "Storage File Data Privileged Contributor"
+  principal_id         = module.managed_identity.principal_id
+}
+
+resource "azurerm_role_assignment" "identity_keyvault" {
+  scope                = module.key_vault.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = module.managed_identity.principal_id
+}
+
+# ==========================================================================
+# 8b. Diagnostic Settings (M-R4: Logs/Metrics → Log Analytics)
+# ==========================================================================
+# Per AI Landing Zone design checklist, all resources should send diagnostic
+# logs and metrics to Log Analytics for centralized monitoring.
+
+resource "azurerm_monitor_diagnostic_setting" "storage" {
+  name                       = "diag-storage-${local.name_prefix}"
+  target_resource_id         = azurerm_storage_account.this.id
+  log_analytics_workspace_id = module.log_analytics.id
+
+  enabled_metric {
+    category = "Transaction"
+  }
+
+  enabled_metric {
+    category = "Capacity"
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "keyvault" {
+  name                       = "diag-kv-${local.name_prefix}"
+  target_resource_id         = module.key_vault.id
+  log_analytics_workspace_id = module.log_analytics.id
+
+  enabled_log {
+    category = "AuditEvent"
+  }
+
+  enabled_log {
+    category = "AzurePolicyEvaluationDetails"
+  }
+
+  enabled_metric {
+    category = "AllMetrics"
+  }
+}
+
+# ==========================================================================
+# 8c. Azure Cosmos DB — Agent State Storage (D-R1)
+# ==========================================================================
+# Per AI Landing Zones design checklist (D-R1): Use standard setup of Agent
+# service and store data in your own Azure resources. Cosmos DB stores
+# threads, messages, and runs for stateful agent scenarios.
+
+resource "azurerm_cosmosdb_account" "this" {
+  name                = "cosmos-${local.name_prefix}"
+  resource_group_name = module.resource_group.name
+  location            = module.resource_group.location
+  offer_type          = "Standard"
+  kind                = "GlobalDocumentDB"
+
+  # Security — private networking, no public access
+  public_network_access_enabled     = false
+  is_virtual_network_filter_enabled = true
+  local_authentication_disabled     = true # Use Azure AD only
+
+  consistency_policy {
+    consistency_level = "Session"
+  }
+
+  geo_location {
+    location          = module.resource_group.location
+    failover_priority = 0
+  }
+
+  # Backup policy
+  backup {
+    type = "Continuous"
+    tier = "Continuous7Days"
+  }
+
+  tags = local.common_tags
+}
+
+resource "azurerm_cosmosdb_sql_database" "agents" {
+  name                = "agents"
+  resource_group_name = module.resource_group.name
+  account_name        = azurerm_cosmosdb_account.this.name
+}
+
+resource "azurerm_cosmosdb_sql_container" "threads" {
+  name                = "threads"
+  resource_group_name = module.resource_group.name
+  account_name        = azurerm_cosmosdb_account.this.name
+  database_name       = azurerm_cosmosdb_sql_database.agents.name
+  partition_key_paths = ["/threadId"]
+  throughput          = 400
+}
+
+# RBAC for managed identity → Cosmos DB
+resource "azurerm_cosmosdb_sql_role_assignment" "identity_cosmos" {
+  resource_group_name = module.resource_group.name
+  account_name        = azurerm_cosmosdb_account.this.name
+  role_definition_id  = "${azurerm_cosmosdb_account.this.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002" # Cosmos DB Built-in Data Contributor
+  principal_id        = module.managed_identity.principal_id
+  scope               = azurerm_cosmosdb_account.this.id
+}
+
+# ==========================================================================
+# 8d. Azure AI Search — Vector Retrieval (D-R1)
+# ==========================================================================
+# AI Search provides embeddings and retrieval for RAG patterns.
+# Used by Foundry agents for knowledge grounding.
+
+resource "azurerm_search_service" "this" {
+  name                          = "srch-${local.name_prefix}"
+  resource_group_name           = module.resource_group.name
+  location                      = module.resource_group.location
+  sku                           = "standard"
+  public_network_access_enabled = false
+  local_authentication_enabled  = false # Azure AD only
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = local.common_tags
+}
+
+# RBAC for managed identity → AI Search
+resource "azurerm_role_assignment" "identity_search_contrib" {
+  scope                = azurerm_search_service.this.id
+  role_definition_name = "Search Index Data Contributor"
+  principal_id         = module.managed_identity.principal_id
+}
+
+resource "azurerm_role_assignment" "identity_search_reader" {
+  scope                = azurerm_search_service.this.id
+  role_definition_name = "Search Index Data Reader"
+  principal_id         = module.managed_identity.principal_id
 }
 
 # ==========================================================================
@@ -262,26 +471,32 @@ module "private_dns" {
 }
 
 # ==========================================================================
-# 10. AI Foundry Hub + Project
+# 10. Microsoft Foundry (New Architecture)
 # ==========================================================================
-# The hub is the top-level workspace that holds shared configuration
-# (Key Vault, Storage, App Insights). The project is a child workspace
-# scoped to the dev team. Public access disabled — all traffic through
-# private endpoints.
+# The NEW Microsoft Foundry uses Microsoft.CognitiveServices/account with 
+# kind AIServices. This replaces the legacy hub-based model.
+# Projects are subresources created within the Foundry account.
+# Public access disabled — all traffic through private endpoints.
 
 module "foundry" {
   source = "../modules/foundry"
 
-  hub_name                = "aihub-${local.name_prefix}"
-  project_name            = "aiproj-${local.name_prefix}"
-  resource_group_name     = module.resource_group.name
-  location                = module.resource_group.location
-  key_vault_id            = module.key_vault.id
-  storage_account_id      = azurerm_storage_account.this.id
-  application_insights_id = module.app_insights.id
-  identity_ids            = [module.managed_identity.id]
-  public_network_access   = "Disabled"
-  tags                    = local.common_tags
+  foundry_name          = "aisvcs-${local.name_prefix}"
+  project_name          = "proj-${local.name_prefix}"
+  project_description   = "Development project for ${var.workload_name}"
+  custom_subdomain_name = "aisvcs-${var.workload_name}-${var.environment}-${local.region_short}-${var.instance}"
+  resource_group_name   = module.resource_group.name
+  location              = module.resource_group.location
+  sku_name              = "S0"
+  identity_ids          = [module.managed_identity.id]
+  public_network_access = "Disabled"
+  tags                  = local.common_tags
+
+  depends_on = [
+    azurerm_role_assignment.identity_storage_blob,
+    azurerm_role_assignment.identity_storage_file,
+    azurerm_role_assignment.identity_keyvault
+  ]
 }
 
 # ==========================================================================
@@ -308,23 +523,20 @@ module "pe_key_vault" {
   tags                           = local.common_tags
 }
 
-# --- AI Foundry Hub Private Endpoint ---
-# The Foundry Hub (amlworkspace sub-resource) requires DNS zones for the ML
-# workspace API, notebook compute, and all AI inference services (Cognitive
-# Services, OpenAI, AI Services) so that SDK calls, notebook traffic, and
-# model endpoints all resolve to private IPs.
+# --- Microsoft Foundry Private Endpoint ---
+# The new Foundry (Cognitive Services) uses "account" sub-resource.
+# DNS zones for Cognitive Services, OpenAI, and AI Services ensure
+# all API calls resolve to private IPs.
 module "pe_foundry" {
   source = "../modules/private-endpoint"
 
-  name                           = "pep-aihub-${local.name_prefix}"
+  name                           = "pep-aisvcs-${local.name_prefix}"
   resource_group_name            = module.resource_group.name
   location                       = module.resource_group.location
   subnet_id                      = module.vnet.subnet_ids["snet-pe"]
-  private_connection_resource_id = module.foundry.hub_id
-  subresource_names              = ["amlworkspace"]
+  private_connection_resource_id = module.foundry.id
+  subresource_names              = ["account"]
   private_dns_zone_ids = [
-    module.private_dns["azureml"].id,
-    module.private_dns["notebooks"].id,
     module.private_dns["cognitive"].id,
     module.private_dns["openai"].id,
     module.private_dns["aiservices"].id,
@@ -361,5 +573,35 @@ module "pe_storage_file" {
   private_connection_resource_id = azurerm_storage_account.this.id
   subresource_names              = ["file"]
   private_dns_zone_ids           = [module.private_dns["file"].id]
+  tags                           = local.common_tags
+}
+
+# --- Cosmos DB Private Endpoint ---
+# Agent state storage (threads, messages, runs) accessed privately.
+module "pe_cosmosdb" {
+  source = "../modules/private-endpoint"
+
+  name                           = "pep-cosmos-${local.name_prefix}"
+  resource_group_name            = module.resource_group.name
+  location                       = module.resource_group.location
+  subnet_id                      = module.vnet.subnet_ids["snet-pe"]
+  private_connection_resource_id = azurerm_cosmosdb_account.this.id
+  subresource_names              = ["Sql"]
+  private_dns_zone_ids           = [module.private_dns["cosmosdb"].id]
+  tags                           = local.common_tags
+}
+
+# --- AI Search Private Endpoint ---
+# Vector search and knowledge retrieval for RAG patterns.
+module "pe_search" {
+  source = "../modules/private-endpoint"
+
+  name                           = "pep-srch-${local.name_prefix}"
+  resource_group_name            = module.resource_group.name
+  location                       = module.resource_group.location
+  subnet_id                      = module.vnet.subnet_ids["snet-pe"]
+  private_connection_resource_id = azurerm_search_service.this.id
+  subresource_names              = ["searchService"]
+  private_dns_zone_ids           = [module.private_dns["search"].id]
   tags                           = local.common_tags
 }
