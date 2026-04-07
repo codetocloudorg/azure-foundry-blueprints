@@ -12,14 +12,35 @@
 [![Podcast](https://img.shields.io/badge/Podcast-Code%20To%20Cloud-1DB954?logo=spotify&logoColor=white)](https://connect.codetocloud.io)
 [![YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white)](https://connect.codetocloud.io)
 
-> **⚠️ Disclaimer:** This code is provided as-is, with no warranties or guarantees of any kind. Use at your own risk. Always test thoroughly in non-production environments before deploying to production.
+> **🎯 Purpose:** This repo provides **developer and platform engineer focused blueprints** to quickly spin up the **NEW Microsoft Foundry experience** in a dev environment. It's designed for learning, experimentation, and understanding the new Foundry architecture.
 
-Enterprise-ready Microsoft Foundry deployment blueprints using **Bicep** and **Terraform**, aligned with modern Microsoft cloud architecture standards and [Azure AI Landing Zone](https://aka.ms/ailz) best practices.
+> **🏢 For Production:** Use [Azure Verified Modules (AVM)](https://aka.ms/avm) and the [Azure AI Landing Zone Accelerator](https://aka.ms/ailz). These are Microsoft's official, enterprise-supported patterns for production AI workloads.
+
+---
+
+## 🚨 When to Use This vs Official Resources
+
+| Use Case | Recommendation |
+|----------|----------------|
+| **Learning the new Foundry experience** | ✅ Use this repo |
+| **Dev/sandbox environment for AI experimentation** | ✅ Use this repo |
+| **Platform engineering reference implementation** | ✅ Use this repo |
+| **Production AI workloads** | ❌ Use [Azure AI Landing Zone](https://aka.ms/ailz) |
+| **Enterprise-grade, supported modules** | ❌ Use [Azure Verified Modules](https://aka.ms/avm) |
+| **Compliance-ready deployments** | ❌ Use [AVM](https://aka.ms/avm) + [ALZ](https://aka.ms/alz) |
+
+### Official Microsoft Resources
+
+- **[Azure AI Landing Zone](https://aka.ms/ailz)** — Enterprise reference architecture for AI workloads
+- **[Azure Verified Modules](https://aka.ms/avm)** — Production-ready, Microsoft-supported Terraform/Bicep modules
+- **[Azure Landing Zones](https://aka.ms/alz)** — Enterprise-scale foundation for Azure
+- **[AI Foundry Documentation](https://learn.microsoft.com/azure/ai-foundry/)** — Official product documentation
 
 ---
 
 ## 📑 Table of Contents
 
+- [When to Use This vs Official Resources](#-when-to-use-this-vs-official-resources)
 - [New Foundry Experience](#-new-foundry-experience-by-default)
 - [What Gets Deployed](#what-gets-deployed)
 - [Quick Start](#quick-start)
@@ -92,14 +113,6 @@ flowchart TB
     style hub fill:#ffcccc,color:#000
     style proj_old fill:#ffcccc,color:#000
 ```
-
-## Overview
-
-This repository provides a developer-focused, enterprise-style reference implementation for deploying [Microsoft Foundry](https://learn.microsoft.com/en-us/azure/ai-services/foundry/) using Infrastructure-as-Code.
-
-> **Note:** This is for development and learning — not a production landing zone.
->
-> **Recommendation:** For production, use [Azure Verified Modules (AVM)](https://aka.ms/avm) and the [Azure AI Landing Zone](https://aka.ms/ailz) accelerator.
 
 ## What Gets Deployed
 
